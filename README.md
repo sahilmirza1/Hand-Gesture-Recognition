@@ -1,1 +1,1 @@
-# Hand-Gesture-Recognition
+Developed an application to control mouse actions usinghandgestures with Python, OpenCV, and Media Pipe. Designedandimplemented gesture recognition algorithms to enable functionalitieslike clicking, scrolling, and drawing on an air canvas. Enhanceduserexperience by refining gesture detection accuracy and optimizingthesystem for real-time performance. Resulted in a fully functional systemthat improved hands-free user interaction and demonstratedpotentialfor accessibility applications. 
