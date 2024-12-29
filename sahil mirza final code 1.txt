@@ -1,0 +1,185 @@
+import cv2
+import mediapipe as mp
+import numpy as np
+import pyautogui
+import time
+
+# Initialize MediaPipe Hand model
+mp_hands = mp.solutions.hands
+hands = mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.7, min_tracking_confidence=0.7)
+mp_draw = mp.solutions.drawing_utils
+
+# Initialize webcam
+cap = cv2.VideoCapture(0)
+
+# Get screen size
+screen_width, screen_height = pyautogui.size()
+
+# Settings
+gesture_sensitivity = 0.02
+enable_move_cursor = True
+enable_double_click = True
+enable_left_click = True
+enable_right_click = True
+enable_volume_control = True
+enable_scrolling = True
+enable_screenshot = True
+
+# Variables to keep track of the previous position of the index finger for scrolling
+previous_y = None
+
+def calculate_finger_status(hand_landmarks):
+    finger_status = []
+
+    # Thumb
+    finger_status.append(hand_landmarks[4].x < hand_landmarks[3].x)
+
+    # Index finger
+    finger_status.append(hand_landmarks[8].y < hand_landmarks[6].y)
+
+    # Middle finger
+    finger_status.append(hand_landmarks[12].y < hand_landmarks[10].y)
+
+    # Ring finger
+    finger_status.append(hand_landmarks[16].y < hand_landmarks[14].y)
+
+    # Pinky
+    finger_status.append(hand_landmarks[20].y < hand_landmarks[18].y)
+
+    return finger_status
+
+def detect_gestures(finger_status, hand_landmarks):
+    # Print detailed finger status for debugging
+    print(f"Finger status: {finger_status}")
+
+    # All fingers up
+    if all(finger_status):
+        return "Right Click"
+
+    # Middle and index fingers up
+    elif finger_status[1] and finger_status[2] and not finger_status[0] and not finger_status[3] and not finger_status[4]:
+        return "Move Cursor"
+
+    # Index and middle fingers joined
+    elif finger_status[1] and finger_status[2] and (
+            abs(hand_landmarks[8].x - hand_landmarks[12].x) < gesture_sensitivity):
+        return "Double Click"
+
+    # Both index and middle fingers down (Left Click)
+    elif not finger_status[1] and not finger_status[2]:
+        return "Left Click"
+
+    # Thumb up and all other fingers down (Screenshot)
+    elif not finger_status[1] and not finger_status[2] and not finger_status[3] and not finger_status[4] and \
+            finger_status[0]:
+        return "Screenshot"
+
+    # Index finger up and middle finger down (Scroll Down)
+    elif finger_status[1] and not finger_status[2]:
+        return "Scroll Down"
+
+    # Middle finger up and index finger down (Scroll Up)
+    elif finger_status[2] and not finger_status[1]:
+        return "Scroll Up"
+
+    return "Unknown"
+
+# Calibration variables
+calibrating = False
+calibration_start_time = 0
+calibration_duration = 5  # seconds
+
+def start_calibration():
+    global calibrating, calibration_start_time
+    calibrating = True
+    calibration_start_time = time.time()
+
+def perform_calibration():
+    global calibrating, gesture_sensitivity
+    if time.time() - calibration_start_time >= calibration_duration:
+        gesture_sensitivity = 0.02  # Adjust based on calibration
+        calibrating = False
+        print("Calibration complete. New gesture sensitivity:", gesture_sensitivity)
+
+while cap.isOpened():
+    success, image = cap.read()
+    if not success:
+        break
+
+    # Flip the image horizontally for a later selfie-view display
+    image = cv2.flip(image, 1)
+
+    # Convert the BGR image to RGB
+    rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+    # Process the image and find hands
+    result = hands.process(rgb_image)
+
+    # Draw the hand annotations on the image
+    if result.multi_hand_landmarks:
+        for hand_landmarks in result.multi_hand_landmarks:
+            mp_draw.draw_landmarks(image, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+
+            # Calculate finger status
+            finger_status = calculate_finger_status(hand_landmarks.landmark)
+
+            # Detect gestures
+            gesture = detect_gestures(finger_status, hand_landmarks.landmark)
+
+            # Print the detected gesture for debugging
+            print(f"Detected gesture: {gesture}")
+
+            # Display the gesture on the image
+            cv2.putText(image, gesture, (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2, cv2.LINE_AA)
+
+            # Perform actions based on the gesture
+            if gesture == "Move Cursor" and enable_move_cursor:
+                # Get the coordinates of the index finger
+                index_finger_tip = hand_landmarks.landmark[8]
+
+                # Map the hand coordinates to screen coordinates
+                screen_x = np.interp(index_finger_tip.x, [0, 1], [0, screen_width])
+                screen_y = np.interp(index_finger_tip.y, [0, 1], [0, screen_height])
+
+                # Move the cursor
+                pyautogui.moveTo(screen_x, screen_y)
+                print(f"Moving cursor to ({screen_x}, {screen_y})")
+            elif gesture == "Double Click" and enable_double_click:
+                pyautogui.doubleClick()
+                print("Performed double click")
+            elif gesture == "Left Click" and enable_left_click:
+                pyautogui.click(button='left')
+                print("Performed left click")
+            elif gesture == "Right Click" and enable_right_click:
+                pyautogui.click(button='right')
+                print("Performed right click")
+            elif gesture == "Scroll Up" and enable_scrolling:
+                pyautogui.scroll(100)  # Scroll Up
+                print("Scrolling up")
+            elif gesture == "Scroll Down" and enable_scrolling:
+                pyautogui.scroll(-100)  # Scroll Down
+                print("Scrolling down")
+            elif gesture == "Volume Control" and enable_volume_control:
+                # Volume control logic here
+                print("Volume Control action detected")
+            elif gesture == "Screenshot" and enable_screenshot:
+                pyautogui.screenshot("screenshot.png")
+                print("Screenshot taken")
+
+    if calibrating:
+        perform_calibration()
+
+    # Display the resulting image
+    cv2.imshow('Hand Gesture Control', image)
+
+    # Break the loop on 'q' key press
+    key = cv2.waitKey(1)
+    if key & 0xFF == ord('q'):
+        break
+    elif key & 0xFF == ord('c'):
+        start_calibration()
+
+# Release the webcam and destroy all windows
+cap.release()
+cv2.destroyAllWindows()
+
